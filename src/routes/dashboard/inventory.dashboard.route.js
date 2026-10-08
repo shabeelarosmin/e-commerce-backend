@@ -1,9 +1,8 @@
 import express from "express";
 
 import {
-  updateInventory,
   getInventoryLogs,
-  getVariantInventoryLogs,
+  getInventoryLogById,
 } from "../../modules/inventory/inventory.controller.js";
 
 import {
@@ -13,20 +12,15 @@ import {
 
 const router = express.Router();
 
-router.post(
-  "/update",
-  authMiddleware,
-  authorizeRoles("admin"),
-  updateInventory,
-);
+// GET ALL INVENTORY LOGS
+router.get("/", authMiddleware, authorizeRoles("admin"), getInventoryLogs);
 
-router.get("/logs", authMiddleware, authorizeRoles("admin"), getInventoryLogs);
-
+// GET INVENTORY LOG BY ID
 router.get(
-  "/logs/:variantId",
+  "/:id",
   authMiddleware,
   authorizeRoles("admin"),
-  getVariantInventoryLogs,
+  getInventoryLogById,
 );
 
 export default router;

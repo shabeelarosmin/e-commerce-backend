@@ -72,7 +72,7 @@ export const getPaymentByIdService = async (customerId, paymentId) => {
 // ADMIN - GET ALL PAYMENTS
 export const getAllPaymentsService = async () => {
   const payments = await Payment.find()
-    .populate("customerId")
+    .populate("customerId", "-password")
     .populate("orderId")
     .sort({ createdAt: -1 });
 
@@ -82,7 +82,7 @@ export const getAllPaymentsService = async () => {
 // ADMIN - GET PAYMENT BY ID
 export const getAdminPaymentByIdService = async (paymentId) => {
   const payment = await Payment.findById(paymentId)
-    .populate("customerId")
+    .populate("customerId", "-password")
     .populate("orderId");
 
   if (!payment) {

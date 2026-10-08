@@ -121,7 +121,7 @@ export const getOrderByIdService = async (customerId, orderId) => {
 // ADMIN - GET ALL ORDERS
 export const getAllOrdersService = async () => {
   const orders = await Order.find()
-    .populate("customerId")
+    .populate("customerId", "-password")
     .populate("items.productId")
     .populate("items.variantId")
     .sort({ createdAt: -1 });
@@ -132,7 +132,7 @@ export const getAllOrdersService = async () => {
 // ADMIN - GET ORDER BY ID
 export const getAdminOrderByIdService = async (orderId) => {
   const order = await Order.findById(orderId)
-    .populate("customerId")
+    .populate("customerId", "-password")
     .populate("items.productId")
     .populate("items.variantId");
 
