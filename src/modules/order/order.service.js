@@ -13,15 +13,25 @@ export const createOrderService = async (data) => {
     throw new Error("Customer not found");
   }
 
-  if (!items || items.length === 0) {
+  if (!Array.isArray(items) || items.length === 0) {
     throw new Error("Order items are required");
   }
 
   let totalAmount = 0;
   const orderItems = [];
 
-  // CHECK STOCK + CALCULATE TOTAL
+  // CHECK STOCK AND CALCULATE TOTAL
   for (const item of items) {
+    if (!item.variantId) {
+      throw new Error("Variant ID is required");
+    }
+
+    const quantity = Number(item.quantity);
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error("Quantity must be a positive integer");
+    }
+
     const variant = await ProductVariant.findById(item.variantId);
 
     if (!variant) {
@@ -32,12 +42,12 @@ export const createOrderService = async (data) => {
       throw new Error("Product variant is inactive");
     }
 
-    if (variant.stockQuantity < item.quantity) {
+    if (variant.stockQuantity < quantity) {
       throw new Error(`Insufficient stock for ${variant.sku}`);
     }
 
-    const price = variant.sellingPrice;
-    const subtotal = price * item.quantity;
+    const price = Number(variant.sellingPrice);
+    const subtotal = price * quantity;
 
     totalAmount += subtotal;
 
@@ -47,21 +57,24 @@ export const createOrderService = async (data) => {
       name: item.name,
       size: item.size,
       color: item.color,
-      quantity: item.quantity,
+      quantity,
       price,
       subtotal,
     });
   }
 
-  // REDUCE STOCK + CREATE INVENTORY LOG
-  for (const item of items) {
+  // REDUCE STOCK AND CREATE INVENTORY LOG
+  for (const item of orderItems) {
     const variant = await ProductVariant.findById(item.variantId);
+
+    if (!variant) {
+      throw new Error("Product variant not found");
+    }
 
     const previousStock = variant.stockQuantity;
     const newStock = previousStock - item.quantity;
 
     variant.stockQuantity = newStock;
-
     await variant.save();
 
     await InventoryLog.create({
@@ -91,13 +104,15 @@ export const createOrderService = async (data) => {
 // CUSTOMER - GET MY ORDERS
 export const getCustomerOrdersService = async (customerId) => {
   const orders = await Order.find({ customerId })
-    .populate("items.productId")
+    .populate({
+      path: "items.productId",
+      populate: {
+        path: "categoryId",
+        select: "name slug",
+      },
+    })
     .populate("items.variantId")
     .sort({ createdAt: -1 });
-
-  if (!orders || orders.length === 0) {
-    throw new Error("No orders found");
-  }
 
   return orders;
 };
@@ -108,7 +123,13 @@ export const getOrderByIdService = async (customerId, orderId) => {
     _id: orderId,
     customerId,
   })
-    .populate("items.productId")
+    .populate({
+      path: "items.productId",
+      populate: {
+        path: "categoryId",
+        select: "name slug",
+      },
+    })
     .populate("items.variantId");
 
   if (!order) {
@@ -122,7 +143,13 @@ export const getOrderByIdService = async (customerId, orderId) => {
 export const getAllOrdersService = async () => {
   const orders = await Order.find()
     .populate("customerId", "-password")
-    .populate("items.productId")
+    .populate({
+      path: "items.productId",
+      populate: {
+        path: "categoryId",
+        select: "name slug",
+      },
+    })
     .populate("items.variantId")
     .sort({ createdAt: -1 });
 
@@ -133,7 +160,13 @@ export const getAllOrdersService = async () => {
 export const getAdminOrderByIdService = async (orderId) => {
   const order = await Order.findById(orderId)
     .populate("customerId", "-password")
-    .populate("items.productId")
+    .populate({
+      path: "items.productId",
+      populate: {
+        path: "categoryId",
+        select: "name slug",
+      },
+    })
     .populate("items.variantId");
 
   if (!order) {
@@ -154,12 +187,10 @@ export const cancelOrderService = async (customerId, orderId) => {
     throw new Error("Order not found or access denied");
   }
 
-  // CHECK ALREADY CANCELLED
   if (order.orderStatus === "cancelled") {
     throw new Error("Order is already cancelled");
   }
 
-  // SHIPPED / DELIVERED ORDERS CANNOT BE CANCELLED
   if (order.orderStatus === "shipped" || order.orderStatus === "delivered") {
     throw new Error("Order cannot be cancelled");
   }
@@ -176,10 +207,8 @@ export const cancelOrderService = async (customerId, orderId) => {
     const newStock = previousStock + item.quantity;
 
     variant.stockQuantity = newStock;
-
     await variant.save();
 
-    // CREATE INVENTORY IN LOG
     await InventoryLog.create({
       variantId: item.variantId,
       type: "IN",
@@ -190,9 +219,58 @@ export const cancelOrderService = async (customerId, orderId) => {
     });
   }
 
-  // UPDATE ORDER STATUS
   order.orderStatus = "cancelled";
+  await order.save();
 
+  return order;
+};
+
+// ADMIN - UPDATE ORDER STATUS
+export const updateOrderStatusService = async (orderId, status) => {
+  const allowedStatuses = [
+    "placed",
+    "confirmed",
+    "shipped",
+    "delivered",
+    "cancelled",
+  ];
+
+  if (!allowedStatuses.includes(status)) {
+    throw new Error("Invalid order status");
+  }
+
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    throw new Error("Order not found");
+  }
+
+  if (order.orderStatus === "cancelled") {
+    throw new Error("Cancelled order cannot be updated");
+  }
+
+  if (order.orderStatus === "delivered") {
+    throw new Error("Delivered order cannot be updated");
+  }
+
+  // Cancellation must use the cancellation flow that restores stock.
+  if (status === "cancelled") {
+    throw new Error("Use the cancellation flow to cancel the order");
+  }
+
+  const allowedNextStatus = {
+    placed: ["confirmed"],
+    confirmed: ["shipped"],
+    shipped: ["delivered"],
+  };
+
+  if (!allowedNextStatus[order.orderStatus]?.includes(status)) {
+    throw new Error(
+      `Cannot change order status from ${order.orderStatus} to ${status}`,
+    );
+  }
+
+  order.orderStatus = status;
   await order.save();
 
   return order;
