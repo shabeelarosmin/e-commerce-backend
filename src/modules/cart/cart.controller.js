@@ -10,35 +10,49 @@ import {
 export const addToCart = async (req, res) => {
   try {
     const { productId, variantId, quantity } = req.body;
-
-    const customerId = req.user.customerId;
+    const customerId = req.user?.customerId;
 
     if (!customerId) {
       return res.status(400).json({
+        success: false,
         message: "Customer account is not linked",
       });
     }
 
-    if (!productId || !variantId || !quantity) {
+    if (!productId || quantity === undefined || quantity === null) {
       return res.status(400).json({
-        message: "productId, variantId and quantity are required",
+        success: false,
+        message: "productId and quantity are required",
+      });
+    }
+
+    const parsedQuantity = Number(quantity);
+
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Quantity must be a positive whole number",
       });
     }
 
     const cart = await addToCartService({
       customerId,
       productId,
-      variantId,
-      quantity,
+      variantId: variantId || null,
+      quantity: parsedQuantity,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
       message: "Product added to cart successfully",
       data: cart,
     });
   } catch (error) {
-    res.status(400).json({
-      message: error.message,
+    console.error("Add to cart error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Unable to add product to cart",
     });
   }
 };
@@ -46,22 +60,27 @@ export const addToCart = async (req, res) => {
 // GET CART
 export const getCart = async (req, res) => {
   try {
-    const customerId = req.user.customerId;
+    const customerId = req.user?.customerId;
 
     if (!customerId) {
       return res.status(400).json({
+        success: false,
         message: "Customer account is not linked",
       });
     }
 
     const cart = await getCartService(customerId);
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
       data: cart,
     });
   } catch (error) {
-    res.status(404).json({
-      message: error.message,
+    console.error("Get cart error:", error);
+
+    return res.status(404).json({
+      success: false,
+      message: error.message || "Unable to fetch cart",
     });
   }
 };
@@ -70,18 +89,24 @@ export const getCart = async (req, res) => {
 export const updateCartItem = async (req, res) => {
   try {
     const { quantity } = req.body;
-
-    const customerId = req.user.customerId;
+    const customerId = req.user?.customerId;
+    const parsedQuantity = Number(quantity);
 
     if (!customerId) {
       return res.status(400).json({
+        success: false,
         message: "Customer account is not linked",
       });
     }
 
-    if (!quantity || quantity < 1) {
+    if (
+      quantity === undefined ||
+      !Number.isInteger(parsedQuantity) ||
+      parsedQuantity < 1
+    ) {
       return res.status(400).json({
-        message: "Valid quantity is required",
+        success: false,
+        message: "Quantity must be a positive whole number",
       });
     }
 
@@ -89,16 +114,20 @@ export const updateCartItem = async (req, res) => {
       customerId,
       req.params.cartId,
       req.params.itemId,
-      quantity,
+      parsedQuantity,
     );
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
       message: "Cart item updated successfully",
       data: cart,
     });
   } catch (error) {
-    res.status(400).json({
-      message: error.message,
+    console.error("Update cart item error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Unable to update cart item",
     });
   }
 };
@@ -106,10 +135,11 @@ export const updateCartItem = async (req, res) => {
 // REMOVE CART ITEM
 export const removeCartItem = async (req, res) => {
   try {
-    const customerId = req.user.customerId;
+    const customerId = req.user?.customerId;
 
     if (!customerId) {
       return res.status(400).json({
+        success: false,
         message: "Customer account is not linked",
       });
     }
@@ -120,13 +150,17 @@ export const removeCartItem = async (req, res) => {
       req.params.itemId,
     );
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
       message: "Cart item removed successfully",
       data: cart,
     });
   } catch (error) {
-    res.status(400).json({
-      message: error.message,
+    console.error("Remove cart item error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Unable to remove cart item",
     });
   }
 };
@@ -134,23 +168,28 @@ export const removeCartItem = async (req, res) => {
 // CLEAR CART
 export const clearCart = async (req, res) => {
   try {
-    const customerId = req.user.customerId;
+    const customerId = req.user?.customerId;
 
     if (!customerId) {
       return res.status(400).json({
+        success: false,
         message: "Customer account is not linked",
       });
     }
 
     const cart = await clearCartService(customerId, req.params.cartId);
 
-    res.status(200).json({
+    return res.status(200).json({
+      success: true,
       message: "Cart cleared successfully",
       data: cart,
     });
   } catch (error) {
-    res.status(400).json({
-      message: error.message,
+    console.error("Clear cart error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Unable to clear cart",
     });
   }
 };

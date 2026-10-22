@@ -8,10 +8,11 @@ const cartItemSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Variant ഇല്ലാത്ത products-ന് null അനുവദിക്കുക
     variantId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
-      required: true,
+      default: null,
     },
 
     quantity: {
@@ -23,11 +24,13 @@ const cartItemSchema = new mongoose.Schema(
     price: {
       type: Number,
       required: true,
+      min: 0,
     },
 
     total: {
       type: Number,
       required: true,
+      min: 0,
     },
   },
   { _id: true },
@@ -50,6 +53,7 @@ const cartSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
       default: 0,
+      min: 0,
     },
   },
   { timestamps: true },
