@@ -7,20 +7,26 @@ import InventoryLog from "../inventory/inventoryLog.model.js";
 export const createOrderService = async (data) => {
   const { customerId, items, shippingAddress, paymentMethod } = data;
 
+  // Validate customer
   const customer = await Customer.findById(customerId);
 
   if (!customer) {
     throw new Error("Customer not found");
   }
 
+  // Validate items
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("Order items are required");
+  }
+
+  if (!shippingAddress) {
+    throw new Error("Shipping address is required");
   }
 
   let totalAmount = 0;
   const orderItems = [];
 
-  // CHECK STOCK AND CALCULATE TOTAL
+  // Validate all items before changing stock
   for (const item of items) {
     if (!item.variantId) {
       throw new Error("Variant ID is required");
@@ -39,7 +45,7 @@ export const createOrderService = async (data) => {
     }
 
     if (!variant.active) {
-      throw new Error("Product variant is inactive");
+      throw new Error(`Product variant ${variant.sku} is inactive`);
     }
 
     if (variant.stockQuantity < quantity) {
@@ -47,6 +53,11 @@ export const createOrderService = async (data) => {
     }
 
     const price = Number(variant.sellingPrice);
+
+    if (!Number.isFinite(price) || price < 0) {
+      throw new Error(`Invalid price for ${variant.sku}`);
+    }
+
     const subtotal = price * quantity;
 
     totalAmount += subtotal;
@@ -55,20 +66,21 @@ export const createOrderService = async (data) => {
       productId: item.productId,
       variantId: item.variantId,
       name: item.name,
-      size: item.size,
-      color: item.color,
+      size: item.size ?? variant.size ?? "",
+      color: item.color ?? variant.color ?? "",
       quantity,
       price,
       subtotal,
     });
   }
 
-  // REDUCE STOCK AND CREATE INVENTORY LOG
+  // Reduce stock and create inventory logs
   for (const item of orderItems) {
     const variant = await ProductVariant.findById(item.variantId);
 
-    if (!variant) {
-      throw new Error("Product variant not found");
+    // Check stock again before reducing
+    if (!variant || variant.stockQuantity < item.quantity) {
+      throw new Error("Insufficient stock or variant not found");
     }
 
     const previousStock = variant.stockQuantity;
@@ -87,7 +99,7 @@ export const createOrderService = async (data) => {
     });
   }
 
-  // CREATE ORDER
+  // Create order
   const order = await Order.create({
     customerId,
     items: orderItems,
@@ -103,7 +115,8 @@ export const createOrderService = async (data) => {
 
 // CUSTOMER - GET MY ORDERS
 export const getCustomerOrdersService = async (customerId) => {
-  const orders = await Order.find({ customerId })
+  return Order.find({ customerId })
+    .populate("customerId", "name fullName email phone")
     .populate({
       path: "items.productId",
       populate: {
@@ -113,16 +126,15 @@ export const getCustomerOrdersService = async (customerId) => {
     })
     .populate("items.variantId")
     .sort({ createdAt: -1 });
-
-  return orders;
 };
 
-// CUSTOMER - GET MY ORDER BY ID
+// CUSTOMER - GET ORDER BY ID
 export const getOrderByIdService = async (customerId, orderId) => {
   const order = await Order.findOne({
     _id: orderId,
     customerId,
   })
+    .populate("customerId", "name fullName email phone")
     .populate({
       path: "items.productId",
       populate: {
@@ -141,8 +153,8 @@ export const getOrderByIdService = async (customerId, orderId) => {
 
 // ADMIN - GET ALL ORDERS
 export const getAllOrdersService = async () => {
-  const orders = await Order.find()
-    .populate("customerId", "-password")
+  return Order.find()
+    .populate("customerId", "name fullName email phone")
     .populate({
       path: "items.productId",
       populate: {
@@ -152,14 +164,12 @@ export const getAllOrdersService = async () => {
     })
     .populate("items.variantId")
     .sort({ createdAt: -1 });
-
-  return orders;
 };
 
 // ADMIN - GET ORDER BY ID
 export const getAdminOrderByIdService = async (orderId) => {
   const order = await Order.findById(orderId)
-    .populate("customerId", "-password")
+    .populate("customerId", "name fullName email phone")
     .populate({
       path: "items.productId",
       populate: {
@@ -187,20 +197,18 @@ export const cancelOrderService = async (customerId, orderId) => {
     throw new Error("Order not found or access denied");
   }
 
-  if (order.orderStatus === "cancelled") {
-    throw new Error("Order is already cancelled");
+  if (["cancelled", "shipped", "delivered"].includes(order.orderStatus)) {
+    throw new Error("This order cannot be cancelled");
   }
 
-  if (order.orderStatus === "shipped" || order.orderStatus === "delivered") {
-    throw new Error("Order cannot be cancelled");
-  }
-
-  // RESTORE STOCK
+  // Restore stock
   for (const item of order.items) {
     const variant = await ProductVariant.findById(item.variantId);
 
     if (!variant) {
-      throw new Error("Product variant not found");
+      throw new Error(
+        `Product variant not found for order item ${item.name || ""}`,
+      );
     }
 
     const previousStock = variant.stockQuantity;
@@ -227,6 +235,10 @@ export const cancelOrderService = async (customerId, orderId) => {
 
 // ADMIN - UPDATE ORDER STATUS
 export const updateOrderStatusService = async (orderId, status) => {
+  const normalizedStatus = String(status || "")
+    .trim()
+    .toLowerCase();
+
   const allowedStatuses = [
     "placed",
     "confirmed",
@@ -235,8 +247,10 @@ export const updateOrderStatusService = async (orderId, status) => {
     "cancelled",
   ];
 
-  if (!allowedStatuses.includes(status)) {
-    throw new Error("Invalid order status");
+  if (!allowedStatuses.includes(normalizedStatus)) {
+    throw new Error(
+      `Invalid order status. Allowed statuses: ${allowedStatuses.join(", ")}`,
+    );
   }
 
   const order = await Order.findById(orderId);
@@ -245,32 +259,30 @@ export const updateOrderStatusService = async (orderId, status) => {
     throw new Error("Order not found");
   }
 
-  if (order.orderStatus === "cancelled") {
-    throw new Error("Cancelled order cannot be updated");
+  if (["cancelled", "delivered"].includes(order.orderStatus)) {
+    throw new Error(`Order with status ${order.orderStatus} cannot be updated`);
   }
 
-  if (order.orderStatus === "delivered") {
-    throw new Error("Delivered order cannot be updated");
-  }
-
-  // Cancellation must use the cancellation flow that restores stock.
-  if (status === "cancelled") {
+  // Cancellation must use the cancellation service to restore stock
+  if (normalizedStatus === "cancelled") {
     throw new Error("Use the cancellation flow to cancel the order");
   }
 
+  // Only allow forward status transitions
   const allowedNextStatus = {
     placed: ["confirmed"],
     confirmed: ["shipped"],
     shipped: ["delivered"],
   };
 
-  if (!allowedNextStatus[order.orderStatus]?.includes(status)) {
+  if (!allowedNextStatus[order.orderStatus]?.includes(normalizedStatus)) {
     throw new Error(
-      `Cannot change order status from ${order.orderStatus} to ${status}`,
+      `Cannot change order status from ${order.orderStatus} to ${normalizedStatus}`,
     );
   }
 
-  order.orderStatus = status;
+  order.orderStatus = normalizedStatus;
+
   await order.save();
 
   return order;

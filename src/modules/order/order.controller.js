@@ -29,9 +29,7 @@ export const createOrder = async (req, res) => {
       data: order,
     });
   } catch (error) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -48,17 +46,13 @@ export const getCustomerOrders = async (req, res) => {
 
     const orders = await getCustomerOrdersService(customerId);
 
-    return res.status(200).json({
-      data: orders,
-    });
+    return res.status(200).json({ data: orders });
   } catch (error) {
-    return res.status(404).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
-// CUSTOMER - GET MY ORDER BY ID
+// CUSTOMER - GET ORDER BY ID
 export const getOrderById = async (req, res) => {
   try {
     const customerId = req.user.customerId;
@@ -71,13 +65,9 @@ export const getOrderById = async (req, res) => {
 
     const order = await getOrderByIdService(customerId, req.params.id);
 
-    return res.status(200).json({
-      data: order,
-    });
+    return res.status(200).json({ data: order });
   } catch (error) {
-    return res.status(404).json({
-      message: error.message,
-    });
+    return res.status(404).json({ message: error.message });
   }
 };
 
@@ -99,9 +89,7 @@ export const cancelOrder = async (req, res) => {
       data: order,
     });
   } catch (error) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
 
@@ -110,13 +98,9 @@ export const getAllOrders = async (req, res) => {
   try {
     const orders = await getAllOrdersService();
 
-    return res.status(200).json({
-      data: orders,
-    });
+    return res.status(200).json({ data: orders });
   } catch (error) {
-    return res.status(500).json({
-      message: error.message,
-    });
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -125,13 +109,9 @@ export const getAdminOrderById = async (req, res) => {
   try {
     const order = await getAdminOrderByIdService(req.params.id);
 
-    return res.status(200).json({
-      data: order,
-    });
+    return res.status(200).json({ data: order });
   } catch (error) {
-    return res.status(404).json({
-      message: error.message,
-    });
+    return res.status(404).json({ message: error.message });
   }
 };
 
@@ -153,8 +133,6 @@ export const updateOrderStatus = async (req, res) => {
       data: order,
     });
   } catch (error) {
-    return res.status(400).json({
-      message: error.message,
-    });
+    return res.status(400).json({ message: error.message });
   }
 };
