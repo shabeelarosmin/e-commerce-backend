@@ -6,12 +6,16 @@ import Customer from "../customer/customer.model.js";
 
 // GENERATE JWT TOKEN
 const generateToken = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+
   return jwt.sign(
     {
-      id: user._id,
-      customerId: user.customerId,
+      id: user._id.toString(),
+      ...(user.customerId ? { customerId: user.customerId.toString() } : {}),
       email: user.email,
-      role: user.role,
+      role: String(user.role || "customer").toLowerCase(),
     },
     process.env.JWT_SECRET,
     {
@@ -20,20 +24,37 @@ const generateToken = (user) => {
   );
 };
 
+// FORMAT USER RESPONSE
+const formatUser = (user) => ({
+  id: user._id,
+  customerId: user.customerId || null,
+  name: user.name,
+  email: user.email,
+  role: String(user.role || "customer").toLowerCase(),
+});
+
 // REGISTER
 export const registerUser = async (data) => {
   const { name, email, password, phone } = data;
 
-  // CHECK AUTH USER
-  const existingUser = await Auth.findOne({ email });
+  if (!name || !email || !password) {
+    throw new Error("Name, email and password are required");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // CHECK EXISTING AUTH USER
+  const existingUser = await Auth.findOne({
+    email: normalizedEmail,
+  });
 
   if (existingUser) {
     throw new Error("Email already exists");
   }
 
-  // CHECK CUSTOMER
+  // CHECK EXISTING CUSTOMER
   const existingCustomer = await Customer.findOne({
-    email,
+    email: normalizedEmail,
   });
 
   if (existingCustomer) {
@@ -45,41 +66,49 @@ export const registerUser = async (data) => {
 
   // CREATE CUSTOMER
   const customer = await Customer.create({
-    name,
-    email,
+    name: name.trim(),
+    email: normalizedEmail,
     password: hashedPassword,
     phone,
     active: true,
   });
 
-  // CREATE AUTH USER
-  const user = await Auth.create({
-    name,
-    email,
-    password: hashedPassword,
-    role: "customer",
-    customerId: customer._id,
-    active: true,
-  });
+  try {
+    // CREATE AUTH USER
+    // Public registration must always create a customer.
+    const user = await Auth.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: "customer",
+      customerId: customer._id,
+      active: true,
+    });
 
-  // GENERATE JWT
-  const token = generateToken(user);
+    const token = generateToken(user);
 
-  return {
-    user: {
-      id: user._id,
-      customerId: user.customerId,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
-    token,
-  };
+    return {
+      user: formatUser(user),
+      token,
+    };
+  } catch (error) {
+    // Avoid leaving an orphan customer if Auth creation fails.
+    await Customer.findByIdAndDelete(customer._id);
+    throw error;
+  }
 };
 
 // LOGIN
 export const loginUser = async (email, password) => {
-  const user = await Auth.findOne({ email });
+  if (!email || !password) {
+    throw new Error("Email and password are required");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const user = await Auth.findOne({
+    email: normalizedEmail,
+  });
 
   if (!user) {
     throw new Error("Invalid email or password");
@@ -93,51 +122,46 @@ export const loginUser = async (email, password) => {
   }
 
   // CHECK ACTIVE
-  if (!user.active) {
+  if (user.active === false) {
     throw new Error("User account is inactive");
   }
 
-  // GENERATE JWT
+  // DEBUG: CHECK THE ROLE IN THE BACKEND TERMINAL
+  console.log("Login successful:", user.email);
+  console.log("Login role:", user.role);
+
   const token = generateToken(user);
 
   return {
-    user: {
-      id: user._id,
-      customerId: user.customerId,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
+    user: formatUser(user),
     token,
   };
 };
 
-export const resetPasswordService = async (
-  email,
-  newPassword
-) => {
-  let user = await Auth.findOne({ email });
+// RESET PASSWORD
+export const resetPasswordService = async (email, newPassword) => {
+  if (!email || !newPassword) {
+    throw new Error("Email and new password are required");
+  }
 
-  const hashedPassword = await bcrypt.hash(
-    newPassword,
-    10
-  );
+  const normalizedEmail = email.trim().toLowerCase();
 
-  // AUTH USER EXISTS
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  // CHECK AUTH USER
+  let user = await Auth.findOne({
+    email: normalizedEmail,
+  });
+
   if (user) {
     user.password = hashedPassword;
-
     await user.save();
 
     if (user.customerId) {
       await Customer.findByIdAndUpdate(
         user.customerId,
-        {
-          password: hashedPassword,
-        },
-        {
-          runValidators: true,
-        }
+        { password: hashedPassword },
+        { runValidators: true },
       );
     }
 
@@ -146,18 +170,19 @@ export const resetPasswordService = async (
     };
   }
 
-  // AUTH USER NOT FOUND
-  // CHECK CUSTOMER
-  const customer = await Customer.findOne({ email });
+  // CHECK EXISTING CUSTOMER
+  const customer = await Customer.findOne({
+    email: normalizedEmail,
+  });
 
   if (!customer) {
     throw new Error("User not found");
   }
 
-  // CREATE AUTH ACCOUNT FOR EXISTING CUSTOMER
+  // CREATE CUSTOMER AUTH ACCOUNT
   user = await Auth.create({
     name: customer.name,
-    email: customer.email,
+    email: normalizedEmail,
     password: hashedPassword,
     role: "customer",
     customerId: customer._id,

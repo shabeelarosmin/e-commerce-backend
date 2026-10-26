@@ -4,17 +4,18 @@ import {
   register,
   login,
   resetPassword,
+  updateProfile,
 } from "../../modules/auth/auth.controller.js";
+
+import authMiddleware from "../../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// REGISTER
 router.post("/register", register);
-
-// LOGIN
 router.post("/login", login);
-
-// RESET PASSWORD
 router.put("/reset-password", resetPassword);
+
+// Update logged-in customer's profile
+router.put("/profile", authMiddleware, updateProfile);
 
 export default router;

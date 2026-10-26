@@ -1,23 +1,23 @@
 import express from "express";
 
-import authWebsiteRoute from "./auth.website.route.js";
-import categoryWebsiteRoute from "./category.website.route.js";
-import productWebsiteRoute from "./product.website.route.js";
-import productVariantWebsiteRoute from "./productVariant.website.route.js";
-import cartWebsiteRoute from "./cart.website.route.js";
-import addressWebsiteRoute from "./address.website.route.js";
-import orderWebsiteRoute from "./order.website.route.js";
-import paymentWebsiteRoute from "./payment.website.route.js";
+import authRoutes from "./auth.website.route.js";
+import categoryRoutes from "./category.website.route.js";
+import productRoutes from "./product.website.route.js";
+import productVariantRoutes from "./productVariant.website.route.js";
+import cartRoutes from "./cart.website.route.js";
+import addressRoutes from "./address.website.route.js";
+import orderRoutes from "./order.website.route.js";
+import paymentRoutes from "./payment.website.route.js";
 
 const router = express.Router();
 
-router.use("/auth", authWebsiteRoute);
-router.use("/category", categoryWebsiteRoute);
-router.use("/product", productWebsiteRoute);
-router.use("/product-variant", productVariantWebsiteRoute);
-router.use("/cart", cartWebsiteRoute);
-router.use("/address", addressWebsiteRoute);
-router.use("/order", orderWebsiteRoute);
-router.use("/payment", paymentWebsiteRoute);
+router.use("/auth", authRoutes);
+router.use("/category", categoryRoutes);
+router.use("/product", productRoutes);
+router.use("/product-variant", productVariantRoutes);
+router.use("/cart", cartRoutes);
+router.use("/address", addressRoutes);
+router.use("/order", orderRoutes);
+router.use("/payment", paymentRoutes);
 
 export default router;

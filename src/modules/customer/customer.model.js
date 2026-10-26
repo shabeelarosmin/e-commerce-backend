@@ -55,6 +55,16 @@ const customerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
+
+    gender: {
+      type: String,
+      default: "",
+    },
   },
   { timestamps: true },
 );

@@ -3,18 +3,33 @@ import ProductVariant from "../productVariant/productVariant.model.js";
 import Customer from "../customer/customer.model.js";
 import InventoryLog from "../inventory/inventoryLog.model.js";
 
+// Reusable population for order details
+const populateOrderDetails = (query) => {
+  return query
+    .populate({
+      path: "customerId",
+      select: "name email phone address city state pincode",
+    })
+    .populate({
+      path: "items.productId",
+      populate: {
+        path: "categoryId",
+        select: "name slug",
+      },
+    })
+    .populate("items.variantId");
+};
+
 // CREATE ORDER
 export const createOrderService = async (data) => {
   const { customerId, items, shippingAddress, paymentMethod } = data;
 
-  // Validate customer
   const customer = await Customer.findById(customerId);
 
   if (!customer) {
     throw new Error("Customer not found");
   }
 
-  // Validate items
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("Order items are required");
   }
@@ -26,7 +41,7 @@ export const createOrderService = async (data) => {
   let totalAmount = 0;
   const orderItems = [];
 
-  // Validate all items before changing stock
+  // Validate items before changing stock
   for (const item of items) {
     if (!item.variantId) {
       throw new Error("Variant ID is required");
@@ -78,7 +93,6 @@ export const createOrderService = async (data) => {
   for (const item of orderItems) {
     const variant = await ProductVariant.findById(item.variantId);
 
-    // Check stock again before reducing
     if (!variant || variant.stockQuantity < item.quantity) {
       throw new Error("Insufficient stock or variant not found");
     }
@@ -99,7 +113,6 @@ export const createOrderService = async (data) => {
     });
   }
 
-  // Create order
   const order = await Order.create({
     customerId,
     items: orderItems,
@@ -110,39 +123,25 @@ export const createOrderService = async (data) => {
     orderStatus: "placed",
   });
 
-  return order;
+  // Return order with customer details populated
+  return populateOrderDetails(Order.findById(order._id));
 };
 
 // CUSTOMER - GET MY ORDERS
 export const getCustomerOrdersService = async (customerId) => {
-  return Order.find({ customerId })
-    .populate("customerId", "name fullName email phone")
-    .populate({
-      path: "items.productId",
-      populate: {
-        path: "categoryId",
-        select: "name slug",
-      },
-    })
-    .populate("items.variantId")
-    .sort({ createdAt: -1 });
+  return populateOrderDetails(
+    Order.find({ customerId }).sort({ createdAt: -1 }),
+  );
 };
 
 // CUSTOMER - GET ORDER BY ID
 export const getOrderByIdService = async (customerId, orderId) => {
-  const order = await Order.findOne({
-    _id: orderId,
-    customerId,
-  })
-    .populate("customerId", "name fullName email phone")
-    .populate({
-      path: "items.productId",
-      populate: {
-        path: "categoryId",
-        select: "name slug",
-      },
-    })
-    .populate("items.variantId");
+  const order = await populateOrderDetails(
+    Order.findOne({
+      _id: orderId,
+      customerId,
+    }),
+  );
 
   if (!order) {
     throw new Error("Order not found or access denied");
@@ -153,31 +152,26 @@ export const getOrderByIdService = async (customerId, orderId) => {
 
 // ADMIN - GET ALL ORDERS
 export const getAllOrdersService = async () => {
-  return Order.find()
-    .populate("customerId", "name fullName email phone")
-    .populate({
-      path: "items.productId",
-      populate: {
-        path: "categoryId",
-        select: "name slug",
-      },
-    })
-    .populate("items.variantId")
-    .sort({ createdAt: -1 });
+  const orders = await populateOrderDetails(
+    Order.find().sort({ createdAt: -1 }),
+  );
+
+  // Temporary debug log: check customer name returned by MongoDB
+  console.log(
+    "ORDER CUSTOMER DETAILS:",
+    orders.map((order) => ({
+      orderId: order._id,
+      customerId: order.customerId,
+      customerName: order.customerId?.name,
+    })),
+  );
+
+  return orders;
 };
 
 // ADMIN - GET ORDER BY ID
 export const getAdminOrderByIdService = async (orderId) => {
-  const order = await Order.findById(orderId)
-    .populate("customerId", "name fullName email phone")
-    .populate({
-      path: "items.productId",
-      populate: {
-        path: "categoryId",
-        select: "name slug",
-      },
-    })
-    .populate("items.variantId");
+  const order = await populateOrderDetails(Order.findById(orderId));
 
   if (!order) {
     throw new Error("Order not found");
@@ -230,7 +224,7 @@ export const cancelOrderService = async (customerId, orderId) => {
   order.orderStatus = "cancelled";
   await order.save();
 
-  return order;
+  return populateOrderDetails(Order.findById(order._id));
 };
 
 // ADMIN - UPDATE ORDER STATUS
@@ -268,7 +262,6 @@ export const updateOrderStatusService = async (orderId, status) => {
     throw new Error("Use the cancellation flow to cancel the order");
   }
 
-  // Only allow forward status transitions
   const allowedNextStatus = {
     placed: ["confirmed"],
     confirmed: ["shipped"],
@@ -282,8 +275,7 @@ export const updateOrderStatusService = async (orderId, status) => {
   }
 
   order.orderStatus = normalizedStatus;
-
   await order.save();
 
-  return order;
+  return populateOrderDetails(Order.findById(order._id));
 };
